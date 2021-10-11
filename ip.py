@@ -28,23 +28,26 @@ class IP:
             # TODO: Trate corretamente o campo TTL do datagrama
             self.enlace.enviar(datagrama, next_hop)
 
+    def _get_bin_addr(self, addr):
+        return "".join([bin(int(x) + 256)[3:] for x in addr.split('.')])
+
     def _next_hop(self, dest_addr):
-        # TODO: Use a tabela de encaminhamento para determinar o próximo salto
-        # (next_hop) a partir do endereço de destino do datagrama (dest_addr).
-        # Retorne o next_hop para o dest_addr fornecido.
-        dest_addr_bin = "".join([bin(int(x) + 256)[3:] for x in dest_addr.split('.')])
+        dest_addr_bin = self._get_bin_addr(dest_addr)
         # print(f"dest addr {dest_addr_bin}")
 
+        res = None
+        max_n = -1
         for elem_tabela in self.tabela:
             cidr, n = elem_tabela[0].split('/')
             n = int(n)
 
-            cidr_bin = "".join([bin(int(x) + 256)[3:] for x in cidr.split('.')])
+            cidr_bin = self._get_bin_addr(cidr)
 
-            if cidr_bin[:n] == dest_addr_bin[:n]:
-                return elem_tabela[1]
+            if cidr_bin[:n] == dest_addr_bin[:n] and n > max_n:
+                max_n = n
+                res = elem_tabela[1]
 
-        return None
+        return res
 
     def definir_endereco_host(self, meu_endereco):
         """
