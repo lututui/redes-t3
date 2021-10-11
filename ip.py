@@ -16,8 +16,8 @@ class IP:
         self.tabela = {}
 
     def __raw_recv(self, datagrama):
-        dscp, ecn, identification, flags, frag_offset, ttl, proto, \
-        src_addr, dst_addr, payload = read_ipv4_header(datagrama)
+        dscp, ecn, identification, flags, frag_offset, ttl, proto, src_addr, dst_addr, payload = \
+            read_ipv4_header(datagrama)
         if dst_addr == self.meu_endereco:
             # atua como host
             if proto == IPPROTO_TCP and self.callback:
@@ -25,8 +25,10 @@ class IP:
         else:
             # atua como roteador
             next_hop = self._next_hop(dst_addr)
-            # TODO: Trate corretamente o campo TTL do datagrama
-            self.enlace.enviar(datagrama, next_hop)
+            ttl -= 1
+
+            if ttl > 0:
+                self.enlace.enviar(self._make_header(payload, src_addr, dst_addr, ttl) + payload, next_hop)
 
     def _get_bin_addr(self, addr):
         return "".join([bin(int(x) + 256)[3:] for x in addr.split('.')])
@@ -75,14 +77,14 @@ class IP:
         """
         self.callback = callback
 
-    def _make_header(self, seg, src, dest):
+    def _make_header(self, seg, src, dest, ttl):
         s = int.from_bytes(str2addr(src), "big")
         d = int.from_bytes(str2addr(dest), "big")
         header = struct.pack('!BBHHHBBHII',
-                             (4 << 4) | 5, (0 << 6) | 0, len(seg) + 20, 0, 0, 64, 6, 0, s, d)
+                             (4 << 4) | 5, (0 << 6) | 0, len(seg) + 20, 0, 0, ttl, 6, 0, s, d)
         checksum = calc_checksum(header)
         return struct.pack('!BBHHHBBHII',
-                           (4 << 4) | 5, (0 << 6) | 0, len(seg) + 20, 0, 0, 64, 6, checksum, s, d)
+                           (4 << 4) | 5, (0 << 6) | 0, len(seg) + 20, 0, 0, ttl, 6, checksum, s, d)
 
     def enviar(self, segmento, dest_addr):
         """
@@ -91,4 +93,4 @@ class IP:
         """
         next_hop = self._next_hop(dest_addr)
 
-        self.enlace.enviar(self._make_header(segmento, self.meu_endereco, dest_addr) + segmento, next_hop)
+        self.enlace.enviar(self._make_header(segmento, self.meu_endereco, dest_addr, 64) + segmento, next_hop)
