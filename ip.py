@@ -27,24 +27,21 @@ class IP:
             next_hop = self._next_hop(dst_addr)
             ttl -= 1
 
-            datagrama = self._make_header(payload, src_addr, dst_addr, ttl, IPPROTO_TCP) + payload
-
             if ttl > 0:
-                self.enlace.enviar(
-                    datagrama,
-                    next_hop
-                )
-        '''elif ttl == 0:
-            next_hop = self._next_hop(src_addr)
+                datagrama = self._make_header(len(payload), src_addr, dst_addr, ttl, IPPROTO_TCP) + payload
+            else:
+                next_hop = self._next_hop(src_addr)
+                datagrama_original = datagrama
 
-            icmp_time = struct.pack('!BBHI', 11, 0, 0, 0) + datagrama
-            icmp_time_checksum = calc_checksum(icmp_time)
-            icmp_time = struct.pack('!BBHI', 11, 0, icmp_time_checksum, 0) + datagrama
+                datagrama = self._make_header(28, self.meu_endereco, src_addr, 64, IPPROTO_ICMP)
 
-            self.enlace.enviar(
-                self._make_header(icmp_time, src_addr, dst_addr, ttl, IPPROTO_ICMP),
-                next_hop
-            )'''
+                icmp_time_exceeded = struct.pack('!BBHHH', 11, 0, 0, 0, 0)
+                checksum3 = calc_checksum(datagrama + icmp_time_exceeded)
+                icmp_time_exceeded = struct.pack('!BBHHH', 11, 0, checksum3, 0, 0)
+
+                datagrama = datagrama + icmp_time_exceeded + datagrama_original[:28]
+
+            self.enlace.enviar(datagrama, next_hop)
 
     def _get_bin_addr(self, addr):
         return "".join([bin(int(x) + 256)[3:] for x in addr.split('.')])
@@ -93,14 +90,14 @@ class IP:
         """
         self.callback = callback
 
-    def _make_header(self, seg, src, dest, ttl, ip_proto):
+    def _make_header(self, len_seg, src, dest, ttl, ip_proto):
         s = int.from_bytes(str2addr(src), "big")
         d = int.from_bytes(str2addr(dest), "big")
         header = struct.pack('!BBHHHBBHII',
-                             (4 << 4) | 5, 0, len(seg) + 20, 0, 0, ttl, ip_proto, 0, s, d)
+                             (4 << 4) | 5, 0, len_seg + 20, 0, 0, ttl, ip_proto, 0, s, d)
         checksum = calc_checksum(header)
         return struct.pack('!BBHHHBBHII',
-                           (4 << 4) | 5, 0, len(seg) + 20, 0, 0, ttl, ip_proto, checksum, s, d)
+                           (4 << 4) | 5, 0, len_seg + 20, 0, 0, ttl, ip_proto, checksum, s, d)
 
     def enviar(self, segmento, dest_addr):
         """
@@ -110,6 +107,6 @@ class IP:
         next_hop = self._next_hop(dest_addr)
 
         self.enlace.enviar(
-            self._make_header(segmento, self.meu_endereco, dest_addr, 64, IPPROTO_TCP) + segmento,
+            self._make_header(len(segmento), self.meu_endereco, dest_addr, 64, IPPROTO_TCP) + segmento,
             next_hop
         )
