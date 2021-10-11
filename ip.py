@@ -13,10 +13,11 @@ class IP:
         self.enlace.registrar_recebedor(self.__raw_recv)
         self.ignore_checksum = self.enlace.ignore_checksum
         self.meu_endereco = None
+        self.tabela = {}
 
     def __raw_recv(self, datagrama):
         dscp, ecn, identification, flags, frag_offset, ttl, proto, \
-           src_addr, dst_addr, payload = read_ipv4_header(datagrama)
+        src_addr, dst_addr, payload = read_ipv4_header(datagrama)
         if dst_addr == self.meu_endereco:
             # atua como host
             if proto == IPPROTO_TCP and self.callback:
@@ -31,7 +32,19 @@ class IP:
         # TODO: Use a tabela de encaminhamento para determinar o próximo salto
         # (next_hop) a partir do endereço de destino do datagrama (dest_addr).
         # Retorne o next_hop para o dest_addr fornecido.
-        pass
+        dest_addr_bin = "".join([bin(int(x) + 256)[3:] for x in dest_addr.split('.')])
+        # print(f"dest addr {dest_addr_bin}")
+
+        for elem_tabela in self.tabela:
+            cidr, n = elem_tabela[0].split('/')
+            n = int(n)
+
+            cidr_bin = "".join([bin(int(x) + 256)[3:] for x in cidr.split('.')])
+
+            if cidr_bin[:n] == dest_addr_bin[:n]:
+                return elem_tabela[1]
+
+        return None
 
     def definir_endereco_host(self, meu_endereco):
         """
@@ -49,9 +62,9 @@ class IP:
         Onde os CIDR são fornecidos no formato 'x.y.z.w/n', e os
         next_hop são fornecidos no formato 'x.y.z.w'.
         """
-        # TODO: Guarde a tabela de encaminhamento. Se julgar conveniente,
-        # converta-a em uma estrutura de dados mais eficiente.
-        pass
+        self.tabela = tabela
+
+        # print("tabela %s" % self.tabela)
 
     def registrar_recebedor(self, callback):
         """
@@ -59,12 +72,20 @@ class IP:
         """
         self.callback = callback
 
+    def _make_header(self, seg, src, dest):
+        s = int.from_bytes(str2addr(src), "big")
+        d = int.from_bytes(str2addr(dest), "big")
+        header = struct.pack('!BBHHHBBHII',
+                             (4 << 4) | 5, (0 << 6) | 0, len(seg) + 20, 0, 0, 64, 6, 0, s, d)
+        checksum = calc_checksum(header)
+        return struct.pack('!BBHHHBBHII',
+                           (4 << 4) | 5, (0 << 6) | 0, len(seg) + 20, 0, 0, 64, 6, checksum, s, d)
+
     def enviar(self, segmento, dest_addr):
         """
         Envia segmento para dest_addr, onde dest_addr é um endereço IPv4
         (string no formato x.y.z.w).
         """
         next_hop = self._next_hop(dest_addr)
-        # TODO: Assumindo que a camada superior é o protocolo TCP, monte o
-        # datagrama com o cabeçalho IP, contendo como payload o segmento.
-        self.enlace.enviar(datagrama, next_hop)
+
+        self.enlace.enviar(self._make_header(segmento, self.meu_endereco, dest_addr) + segmento, next_hop)
